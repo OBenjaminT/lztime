@@ -26,7 +26,9 @@ pub const Weekday = enum {
     sunday,
 
     pub inline fn add(weekday: Weekday, days: anytype) Weekday {
-        return @intToEnum(Weekday, @mod(@enumToInt(weekday) + @intCast(i8, @rem(days, 7)), 7));
+        const scaled_offset = @intCast(i4, @rem(days, 7));
+        const shifted_day = @enumToInt(weekday) + scaled_offset;
+        return @intToEnum(Weekday, @mod(shifted_day, 7));
     }
 };
 
@@ -285,23 +287,18 @@ pub const Date = struct {
 
     /// 0-indexed day of year (January 1st is day 0, February 1st is day 31).
     pub fn dayOfYear(date: Date) u9 {
-        const day_of_month: u9 = date.day - 1;
-        const january_to_march = @as(u9, 31 + 28) + @boolToInt(date.isLeapYear());
-        return switch (date.month) {
-            1 => day_of_month,
-            2 => day_of_month + 31,
-            3 => day_of_month + january_to_march,
-            4 => day_of_month + january_to_march + 31,
-            5 => day_of_month + january_to_march + 31 + 30,
-            6 => day_of_month + january_to_march + 31 + 30 + 31,
-            7 => day_of_month + january_to_march + 31 + 30 + 31 + 30,
-            8 => day_of_month + january_to_march + 31 + 30 + 31 + 30 + 31,
-            9 => day_of_month + january_to_march + 31 + 30 + 31 + 30 + 31 + 31,
-            10 => day_of_month + january_to_march + 31 + 30 + 31 + 30 + 31 + 31 + 30,
-            11 => day_of_month + january_to_march + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31,
-            12 => day_of_month + january_to_march + 31 + 30 + 31 + 30 + 31 + 31 + 30 + 31 + 30,
-            else => unreachable, // `Date` month is out of range.
+        // true for all months before date.month
+        const days_counted = @import("std").simd.iota(u4, 12) < @splat(12, date.month);
+        // The length of each month
+        const lengths = @Vector(12, u9){
+            date.day - 1,
+            31, @as(u5, 28) + @boolToInt(date.isLeapYear()),
+            31, 30, 31, 30, 31, 31, 30, 31, 30,
         };
+
+        // lengths[i] if days_counted[i] else 0
+        const sum = @select(u9, days_counted, lengths, @splat(12, @as(u9, 0))); // TODO has to be u9 because .Add is wrapping?
+        return @reduce(.Add, sum);
     }
 
     pub fn dayIndex(date: Date) i128 {
